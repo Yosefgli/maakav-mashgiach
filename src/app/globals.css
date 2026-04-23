@@ -696,42 +696,167 @@ tr:last-child td {
   color: #fff;
 }
 
+/* ── Admin tabs ────────────────────────────────── */
+.adminTabs {
+  display: flex;
+  gap: 0;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  box-shadow: var(--shadow-sm);
+}
+
+.adminTabs::-webkit-scrollbar {
+  display: none;
+}
+
+.adminTab {
+  flex: 1;
+  min-width: max-content;
+  padding: 11px 14px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+
+.adminTab--active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+
+/* ── Admin section content ─────────────────────── */
+.adminSection {
+  display: grid;
+  gap: 12px;
+}
+
+.adminSection__toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.adminSection__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 32px;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+/* ── QR code display ───────────────────────────── */
+.qrCodeText {
+  font-family: monospace;
+  font-size: 0.8rem;
+  background: var(--bg);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--text);
+}
+
+.qrBig {
+  display: inline-block;
+  padding: 20px 24px;
+  background: var(--bg);
+  border-radius: var(--radius);
+  font-family: monospace;
+  font-size: 1.1rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--text);
+}
+
+/* ── Location name cell ────────────────────────── */
+.adminSection__locName {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ── Assignment list ───────────────────────────── */
+.assignList {
+  display: grid;
+  gap: 8px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.assignItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.875rem;
+}
+
+.assignItem input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  flex-shrink: 0;
+  accent-color: var(--primary);
+}
+
+.assignItem span:first-of-type {
+  flex: 1;
+  font-weight: 600;
+}
+
+/* ── Camera ────────────────────────────────────── */
 .cameraPanel {
   position: relative;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   overflow: hidden;
-  min-height: 260px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  min-height: 280px;
+  background: #000;
 }
 
-.cameraInvite {
+.cameraFeed {
+  width: 100%;
+  min-height: 280px;
+}
+
+.cameraFeed > div,
+.cameraFeed video {
+  width: 100% !important;
+  border: none !important;
+}
+
+/* Overlay sits on top of cameraFeed. Never hides the div itself
+   so Html5Qrcode can always measure its dimensions. */
+.cameraOverlay {
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 14px;
-  padding: 32px 16px;
+  background: var(--surface);
+  padding: 24px 16px;
   text-align: center;
-}
-
-.cameraInvite__icon {
-  color: var(--muted);
-  opacity: 0.6;
 }
 
 .cameraError {
   color: var(--danger);
   font-size: 0.825rem;
-}
-
-.cameraFeed {
-  width: 100%;
-}
-
-.cameraFeed > div {
-  border: none !important;
 }
 
 .manualPanel {

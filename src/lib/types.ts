@@ -9,6 +9,20 @@ export type Profile = {
   role: Role;
 };
 
+export type Location = {
+  id: string;
+  name: string;
+  city: string;
+  qrCode: string;
+  isActive: boolean;
+  createdAt: string;
+};
+
+export type UserRecord = Profile & {
+  createdAt: string;
+  assignedLocationIds: string[];
+};
+
 export type VisitLog = {
   id: string;
   occurredAt: string;

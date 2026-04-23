@@ -23,18 +23,14 @@ export function QrScannerDialog({
 
   const stopCamera = async () => {
     if (scannerRef.current) {
-      try {
-        await scannerRef.current.stop();
-      } catch {
-        /* camera may already be stopped */
-      }
+      try { await scannerRef.current.stop(); } catch { /* already stopped */ }
       scannerRef.current = null;
     }
     setCameraState("idle");
-    setCameraError(null);
   };
 
   const startCamera = async () => {
+    if (scannerRef.current) return; // already running
     setCameraState("starting");
     setCameraError(null);
     try {
@@ -43,42 +39,38 @@ export function QrScannerDialog({
       await qr.start(
         { facingMode: "environment" },
         { fps: 10, qrbox: { width: 220, height: 220 } },
-        (decoded) => {
-          onScan(decoded);
-        },
+        (decoded) => { onScan(decoded); },
         () => undefined,
       );
       scannerRef.current = qr;
       setCameraState("active");
     } catch (err) {
-      setCameraError(
-        err instanceof Error ? err.message : "לא הצלחנו לגשת למצלמה.",
-      );
+      setCameraError(err instanceof Error ? err.message : "לא הצלחנו לגשת למצלמה.");
       setCameraState("error");
     }
   };
 
-  // Stop camera when switching to manual or closing
+  // Auto-start camera when dialog opens on camera tab
   useEffect(() => {
-    if (tab === "manual" || !open) {
+    if (open && tab === "camera") {
+      void startCamera();
+    } else if (!open || tab === "manual") {
       void stopCamera();
     }
-  }, [tab, open]);
+  }, [open, tab]);
 
-  // Reset state when dialog opens/closes
+  // Reset on close
   useEffect(() => {
     if (!open) {
       setManualCode("");
       setTab("camera");
+      setCameraError(null);
     }
   }, [open]);
 
   if (!open) return null;
 
-  const handleClose = () => {
-    void stopCamera();
-    onClose();
-  };
+  const handleClose = () => { void stopCamera(); onClose(); };
 
   return (
     <div className="modalBackdrop" role="presentation" onClick={handleClose}>
@@ -109,8 +101,7 @@ export function QrScannerDialog({
             aria-selected={tab === "camera"}
             type="button"
           >
-            <Camera size={15} />
-            מצלמה
+            <Camera size={15} /> מצלמה
           </button>
           <button
             className={`scanTab ${tab === "manual" ? "scanTab--active" : ""}`}
@@ -119,40 +110,37 @@ export function QrScannerDialog({
             aria-selected={tab === "manual"}
             type="button"
           >
-            <Keyboard size={15} />
-            קוד ידני
+            <Keyboard size={15} /> קוד ידני
           </button>
         </div>
 
         {tab === "camera" && (
           <div className="cameraPanel">
-            {/* Scanner renders into this div — always present when camera tab is open */}
-            <div
-              id={elementId}
-              className="cameraFeed"
-              style={{ display: cameraState === "active" ? "block" : "none" }}
-            />
+            {/*
+              The scanner div MUST always be visible (not display:none) so Html5Qrcode
+              can measure its dimensions via getBoundingClientRect when start() is called.
+              The overlay sits on top and fades away once the camera becomes active.
+            */}
+            <div id={elementId} className="cameraFeed" />
 
             {cameraState !== "active" && (
-              <div className="cameraInvite">
-                {cameraState === "starting" ? (
+              <div className="cameraOverlay">
+                {cameraState === "starting" && (
                   <>
-                    <RefreshCw size={36} className="spin cameraInvite__icon" />
-                    <span style={{ fontSize: "0.85rem", color: "var(--muted)" }}>
-                      מפעיל מצלמה...
-                    </span>
+                    <RefreshCw size={32} className="spin" style={{ color: "var(--muted)" }} />
+                    <span style={{ fontSize: "0.85rem", color: "var(--muted)" }}>מפעיל מצלמה...</span>
                   </>
-                ) : (
+                )}
+                {(cameraState === "idle" || cameraState === "error") && (
                   <>
-                    <ScanLine size={52} className="cameraInvite__icon" />
-                    {cameraError ? <p className="cameraError">{cameraError}</p> : null}
+                    <ScanLine size={48} style={{ color: "var(--muted)", opacity: 0.5 }} />
+                    {cameraError && <p className="cameraError">{cameraError}</p>}
                     <button
                       className="button button--primary"
                       onClick={() => void startCamera()}
                       type="button"
                     >
-                      <Camera size={15} />
-                      הפעל מצלמה
+                      <Camera size={15} /> הפעל מצלמה
                     </button>
                   </>
                 )}
@@ -170,9 +158,7 @@ export function QrScannerDialog({
                 dir="ltr"
                 onChange={(e) => setManualCode(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && manualCode.trim()) {
-                    onScan(manualCode.trim());
-                  }
+                  if (e.key === "Enter" && manualCode.trim()) onScan(manualCode.trim());
                 }}
                 placeholder="LOC-1001-XYZ"
                 type="text"
