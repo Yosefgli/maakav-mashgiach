@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { Camera, Keyboard, RefreshCw, ScanLine, X } from "lucide-react";
+import type { GpsCoords } from "@/lib/types";
 
 type ScannerInstance = { stop: () => Promise<void> };
 
@@ -12,14 +13,26 @@ export function QrScannerDialog({
 }: {
   open: boolean;
   onClose: () => void;
-  onScan: (code: string) => void;
+  onScan: (code: string, coords?: GpsCoords) => void;
 }) {
   const [tab, setTab] = useState<"camera" | "manual">("camera");
   const [cameraState, setCameraState] = useState<"idle" | "starting" | "active" | "error">("idle");
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [manualCode, setManualCode] = useState("");
+  const [gpsCoords, setGpsCoords] = useState<GpsCoords | null>(null);
   const scannerRef = useRef<ScannerInstance | null>(null);
   const elementId = useId().replace(/:/g, "_");
+
+  // Collect GPS in background while dialog is open
+  useEffect(() => {
+    if (!open || !navigator.geolocation) return;
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => setGpsCoords({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
+      () => undefined, // silently ignore GPS errors
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [open]);
 
   const stopCamera = async () => {
     if (scannerRef.current) {
@@ -30,7 +43,7 @@ export function QrScannerDialog({
   };
 
   const startCamera = async () => {
-    if (scannerRef.current) return; // already running
+    if (scannerRef.current) return;
     setCameraState("starting");
     setCameraError(null);
     try {
@@ -39,7 +52,7 @@ export function QrScannerDialog({
       await qr.start(
         { facingMode: "environment" },
         { fps: 10, qrbox: { width: 220, height: 220 } },
-        (decoded) => { onScan(decoded); },
+        (decoded) => { onScan(decoded, gpsCoords ?? undefined); },
         () => undefined,
       );
       scannerRef.current = qr;
@@ -65,6 +78,7 @@ export function QrScannerDialog({
       setManualCode("");
       setTab("camera");
       setCameraError(null);
+      setGpsCoords(null);
     }
   }, [open]);
 
@@ -158,7 +172,7 @@ export function QrScannerDialog({
                 dir="ltr"
                 onChange={(e) => setManualCode(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && manualCode.trim()) onScan(manualCode.trim());
+                  if (e.key === "Enter" && manualCode.trim()) onScan(manualCode.trim(), gpsCoords ?? undefined);
                 }}
                 placeholder="LOC-1001-XYZ"
                 type="text"
@@ -168,12 +182,18 @@ export function QrScannerDialog({
             <button
               className="button button--primary button--wide"
               disabled={!manualCode.trim()}
-              onClick={() => onScan(manualCode.trim())}
+              onClick={() => onScan(manualCode.trim(), gpsCoords ?? undefined)}
               type="button"
             >
               שלח קוד
             </button>
           </div>
+        )}
+
+        {gpsCoords && (
+          <p style={{ fontSize: "0.75rem", color: "var(--success)", textAlign: "center" }}>
+            ✓ מיקום GPS זמין
+          </p>
         )}
       </section>
     </div>

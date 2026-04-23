@@ -16,7 +16,11 @@ export type Location = {
   qrCode: string;
   isActive: boolean;
   createdAt: string;
+  latitude: number | null;
+  longitude: number | null;
 };
+
+export type GpsCoords = { latitude: number; longitude: number };
 
 export type UserRecord = Profile & {
   createdAt: string;
@@ -75,6 +79,8 @@ export type AdminDashboardData = {
 export type ScanResult = {
   status: VisitStatus;
   message: string;
+  locationName?: string;
+  distanceMeters?: number | null;
 };
 
 export type LoginFormState = {

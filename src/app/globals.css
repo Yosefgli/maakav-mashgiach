@@ -376,10 +376,45 @@ table {
   grid-template-columns: 1fr 1fr;
 }
 
-@media (min-width: 768px) {
-  .filtersGrid {
-    grid-template-columns: repeat(5, 1fr);
-  }
+.filterSection {
+  display: grid;
+  gap: 6px;
+}
+
+.filterSection__label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.filterChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.filterChip {
+  height: 30px;
+  padding: 0 12px;
+  border-radius: var(--radius-full);
+  font-size: 0.8rem;
+  font-weight: 600;
+  border: 1.5px solid var(--line);
+  color: var(--muted);
+  background: var(--surface);
+  transition: border-color 0.12s, background 0.12s, color 0.12s;
+  white-space: nowrap;
+}
+
+.filterChip:hover:not(:disabled) {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.filterChip--active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
 }
 
 /* ── Form fields ───────────────────────────────── */

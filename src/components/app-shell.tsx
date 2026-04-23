@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   Building2,
@@ -24,10 +24,12 @@ import {
   signInWithEmail,
   signOutCurrentUser,
   submitVisitScan,
+  subscribeToLogs,
   type DashboardFilters,
 } from "@/lib/data-service";
 import type {
   AdminDashboardData,
+  GpsCoords,
   LoginFormState,
   MashgiachDashboardData,
   Profile,
@@ -41,9 +43,9 @@ import { AdminLocations } from "./admin-locations";
 import { AdminMashgichim } from "./admin-mashgichim";
 import { AdminReports } from "./admin-reports";
 
-const REFRESH_INTERVAL_MS = 60_000;
+const POLL_INTERVAL_MS = 60_000;
 const EMPTY_LOGIN: LoginFormState = { email: "", password: "" };
-const EMPTY_FILTERS: DashboardFilters = { from: "", to: "", mashgiachName: "", locationName: "", city: "" };
+const EMPTY_FILTERS: DashboardFilters = { from: "", to: "", mashgiachNames: [], locationNames: [], cities: [] };
 
 type AdminView = "dashboard" | "locations" | "mashgichim" | "reports";
 
@@ -68,6 +70,12 @@ export function AppShell() {
   const [scanFeedback, setScanFeedback] = useState<ScanResult | null>(null);
   const [adminView, setAdminView] = useState<AdminView>("dashboard");
 
+  // Refs so subscription callback always has latest values without recreating channel
+  const profileRef = useRef<Profile | null>(null);
+  const filtersRef = useRef<DashboardFilters>(EMPTY_FILTERS);
+  profileRef.current = profile;
+  filtersRef.current = filters;
+
   const configured = isSupabaseConfigured();
 
   const loadDashboard = useCallback(
@@ -90,6 +98,7 @@ export function AppShell() {
     [],
   );
 
+  // Bootstrap: load session on mount
   useEffect(() => {
     let active = true;
     const bootstrap = async () => {
@@ -110,11 +119,20 @@ export function AppShell() {
     return () => { active = false; };
   }, [loadDashboard]);
 
+  // Real-time subscription (Supabase) or polling fallback (mock mode)
   useEffect(() => {
     if (!profile) return;
-    const interval = window.setInterval(() => void loadDashboard(profile, filters, true), REFRESH_INTERVAL_MS);
+    const reload = () => {
+      const p = profileRef.current;
+      const f = filtersRef.current;
+      if (p) void loadDashboard(p, f, true);
+    };
+    const unsubscribe = subscribeToLogs(reload);
+    if (unsubscribe) return unsubscribe;
+    // Mock mode fallback
+    const interval = window.setInterval(reload, POLL_INTERVAL_MS);
     return () => window.clearInterval(interval);
-  }, [filters, loadDashboard, profile]);
+  }, [profile, loadDashboard]);
 
   const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -166,11 +184,11 @@ export function AppShell() {
 
   const onRefresh = () => { if (profile) void loadDashboard(profile, filters); };
 
-  const onScan = async (qrCode: string) => {
+  const onScan = async (qrCode: string, coords?: GpsCoords) => {
     if (!profile) return;
     setBusy(true);
     try {
-      const result = await submitVisitScan(profile, qrCode);
+      const result = await submitVisitScan(profile, qrCode, coords);
       setScanFeedback(result);
       await loadDashboard(profile, filters, true);
     } catch (err) {
@@ -180,7 +198,13 @@ export function AppShell() {
     }
   };
 
-  // Dropdown options derived from existing logs (no extra fetch needed)
+  // Auto-apply: update filters state and immediately reload
+  const applyFilters = useCallback((f: DashboardFilters) => {
+    setFilters(f);
+    if (profile) void loadDashboard(profile, f);
+  }, [profile, loadDashboard]);
+
+  // Chip options derived from existing logs
   const filterOptions = useMemo(() => {
     const logs = adminData?.logs ?? [];
     return {
@@ -309,8 +333,7 @@ export function AppShell() {
             data={adminData}
             filters={filters}
             filterOptions={filterOptions}
-            onFiltersChange={setFilters}
-            onApplyFilters={() => void loadDashboard(profile, filters)}
+            onFiltersChange={applyFilters}
           />
         )}
 
@@ -320,14 +343,13 @@ export function AppShell() {
         {/* Admin: mashgichim */}
         {profile.role === "admin" && adminView === "mashgichim" && <AdminMashgichim />}
 
-        {/* Admin: reports (logs with delete) */}
+        {/* Admin: reports (logs with edit + delete) */}
         {profile.role === "admin" && adminView === "reports" && adminData && (
           <>
             <FiltersBar
               filters={filters}
               filterOptions={filterOptions}
-              onChange={setFilters}
-              onSubmit={() => void loadDashboard(profile, filters)}
+              onChange={applyFilters}
               showAdminFilters
             />
             <div className="card">
@@ -340,6 +362,13 @@ export function AppShell() {
                   onDeleted={(id) =>
                     setAdminData((prev) =>
                       prev ? { ...prev, logs: prev.logs.filter((l) => l.id !== id) } : null
+                    )
+                  }
+                  onUpdated={(id, data) =>
+                    setAdminData((prev) =>
+                      prev
+                        ? { ...prev, logs: prev.logs.map((l) => l.id === id ? { ...l, ...data } : l) }
+                        : null
                     )
                   }
                 />
@@ -364,7 +393,7 @@ export function AppShell() {
       <QrScannerDialog
         open={scannerOpen}
         onClose={() => setScannerOpen(false)}
-        onScan={(code) => { void onScan(code); setScannerOpen(false); }}
+        onScan={(code, coords) => { void onScan(code, coords); setScannerOpen(false); }}
       />
 
       {scanFeedback && (
@@ -426,59 +455,93 @@ function LoginPanel({
   );
 }
 
-// ── Filters ───────────────────────────────────────
+// ── Filters (chip-based, auto-apply) ─────────────
 
 function FiltersBar({
-  filters, filterOptions, onChange, onSubmit, showAdminFilters,
+  filters, filterOptions, onChange, showAdminFilters,
 }: {
   filters: DashboardFilters;
   filterOptions: { mashgichim: string[]; locations: string[]; cities: string[] };
   onChange: (f: DashboardFilters) => void;
-  onSubmit: () => void;
   showAdminFilters?: boolean;
 }) {
+  const toggleChip = (key: "mashgiachNames" | "locationNames" | "cities", val: string) => {
+    const current = filters[key];
+    const next = current.includes(val) ? current.filter((v) => v !== val) : [...current, val];
+    onChange({ ...filters, [key]: next });
+  };
+
   return (
     <div className="card">
-      <div className="card__header--inline">
-        <span className="card__title" style={{ margin: 0 }}>סינון</span>
-        <button className="button button--primary" onClick={onSubmit} type="button">החל</button>
-      </div>
+      <div className="card__header"><div className="card__title">סינון</div></div>
       <div className="card__body">
         <div className="filtersGrid">
           <label className="field">
             <span>מתאריך</span>
-            <input onChange={(e) => onChange({ ...filters, from: e.target.value })} type="date" value={filters.from} />
+            <input
+              type="date"
+              value={filters.from}
+              onChange={(e) => onChange({ ...filters, from: e.target.value })}
+            />
           </label>
           <label className="field">
             <span>עד תאריך</span>
-            <input onChange={(e) => onChange({ ...filters, to: e.target.value })} type="date" value={filters.to} />
+            <input
+              type="date"
+              value={filters.to}
+              onChange={(e) => onChange({ ...filters, to: e.target.value })}
+            />
           </label>
-          {showAdminFilters && (
-            <>
-              <label className="field">
-                <span>משגיח</span>
-                <select onChange={(e) => onChange({ ...filters, mashgiachName: e.target.value })} value={filters.mashgiachName}>
-                  <option value="">כולם</option>
-                  {filterOptions.mashgichim.map((n) => <option key={n} value={n}>{n}</option>)}
-                </select>
-              </label>
-              <label className="field">
-                <span>מקום</span>
-                <select onChange={(e) => onChange({ ...filters, locationName: e.target.value })} value={filters.locationName}>
-                  <option value="">כולם</option>
-                  {filterOptions.locations.map((n) => <option key={n} value={n}>{n}</option>)}
-                </select>
-              </label>
-              <label className="field">
-                <span>עיר</span>
-                <select onChange={(e) => onChange({ ...filters, city: e.target.value })} value={filters.city}>
-                  <option value="">כולן</option>
-                  {filterOptions.cities.map((c) => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </label>
-            </>
-          )}
         </div>
+
+        {showAdminFilters && (filterOptions.mashgichim.length > 0 || filterOptions.locations.length > 0 || filterOptions.cities.length > 0) && (
+          <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
+            <ChipFilter
+              label="משגיח"
+              options={filterOptions.mashgichim}
+              selected={filters.mashgiachNames}
+              onToggle={(v) => toggleChip("mashgiachNames", v)}
+            />
+            <ChipFilter
+              label="מקום"
+              options={filterOptions.locations}
+              selected={filters.locationNames}
+              onToggle={(v) => toggleChip("locationNames", v)}
+            />
+            <ChipFilter
+              label="עיר"
+              options={filterOptions.cities}
+              selected={filters.cities}
+              onToggle={(v) => toggleChip("cities", v)}
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ChipFilter({ label, options, selected, onToggle }: {
+  label: string;
+  options: string[];
+  selected: string[];
+  onToggle: (val: string) => void;
+}) {
+  if (options.length === 0) return null;
+  return (
+    <div className="filterSection">
+      <div className="filterSection__label">{label}</div>
+      <div className="filterChips">
+        {options.map((opt) => (
+          <button
+            key={opt}
+            className={`filterChip ${selected.includes(opt) ? "filterChip--active" : ""}`}
+            onClick={() => onToggle(opt)}
+            type="button"
+          >
+            {opt}
+          </button>
+        ))}
       </div>
     </div>
   );
@@ -506,13 +569,12 @@ function MashgiachDashboard({ data }: { data: MashgiachDashboardData }) {
 // ── Admin dashboard view ──────────────────────────
 
 function AdminDashboardView({
-  data, filters, filterOptions, onFiltersChange, onApplyFilters,
+  data, filters, filterOptions, onFiltersChange,
 }: {
   data: AdminDashboardData;
   filters: DashboardFilters;
   filterOptions: { mashgichim: string[]; locations: string[]; cities: string[] };
   onFiltersChange: (f: DashboardFilters) => void;
-  onApplyFilters: () => void;
 }) {
   return (
     <>
@@ -527,7 +589,6 @@ function AdminDashboardView({
         filters={filters}
         filterOptions={filterOptions}
         onChange={onFiltersChange}
-        onSubmit={onApplyFilters}
         showAdminFilters
       />
 
@@ -648,6 +709,13 @@ function InlineMessage({ text, tone }: { text: string; tone: "danger" | "success
 
 function ScanResultModal({ feedback, onClose }: { feedback: ScanResult; onClose: () => void }) {
   const tone = getStatusTone(feedback.status);
+  const distLabel = feedback.distanceMeters != null
+    ? feedback.distanceMeters < 1000
+      ? `${Math.round(feedback.distanceMeters)} מ׳ מהמקום`
+      : `${(feedback.distanceMeters / 1000).toFixed(1)} ק״מ מהמקום`
+    : null;
+  const farAway = feedback.distanceMeters != null && feedback.distanceMeters > 500;
+
   return (
     <div className="modalBackdrop" role="presentation" onClick={onClose}>
       <section className="modal" role="dialog" aria-modal aria-labelledby="scan-result-title" onClick={(e) => e.stopPropagation()}>
@@ -657,6 +725,11 @@ function ScanResultModal({ feedback, onClose }: { feedback: ScanResult; onClose:
           </div>
           <h2 id="scan-result-title">{translateStatus(feedback.status)}</h2>
           <p>{feedback.message}</p>
+          {distLabel && (
+            <span className={`badge ${farAway ? "badge--warning" : "badge--success"}`} style={{ fontSize: "0.8rem" }}>
+              {farAway ? "⚠ " : "✓ "}{distLabel}
+            </span>
+          )}
         </div>
         <button className="button button--primary button--wide" onClick={onClose} type="button">חזרה</button>
       </section>

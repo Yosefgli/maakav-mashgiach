@@ -16,8 +16,8 @@ function generateQrCode() {
   return `LOC-${rand(4)}-${rand(4)}`;
 }
 
-type FormState = { name: string; city: string; qrCode: string };
-const EMPTY_FORM: FormState = { name: "", city: "", qrCode: "" };
+type FormState = { name: string; city: string; qrCode: string; latitude: string; longitude: string };
+const EMPTY_FORM: FormState = { name: "", city: "", qrCode: "", latitude: "", longitude: "" };
 
 export function AdminLocations() {
   const [locations, setLocations] = useState<Location[]>([]);
@@ -50,7 +50,7 @@ export function AdminLocations() {
   };
 
   const openEdit = (loc: Location) => {
-    setForm({ name: loc.name, city: loc.city, qrCode: loc.qrCode });
+    setForm({ name: loc.name, city: loc.city, qrCode: loc.qrCode, latitude: loc.latitude != null ? String(loc.latitude) : "", longitude: loc.longitude != null ? String(loc.longitude) : "" });
     setSelected(loc);
     setModalMode("edit");
   };
@@ -61,11 +61,13 @@ export function AdminLocations() {
     if (!form.name.trim() || !form.city.trim() || !form.qrCode.trim()) return;
     setBusy(true);
     setError(null);
+    const lat = form.latitude.trim() ? parseFloat(form.latitude.trim()) : null;
+    const lng = form.longitude.trim() ? parseFloat(form.longitude.trim()) : null;
     try {
       if (modalMode === "add") {
-        await createLocation({ name: form.name.trim(), city: form.city.trim(), qrCode: form.qrCode.trim() });
+        await createLocation({ name: form.name.trim(), city: form.city.trim(), qrCode: form.qrCode.trim(), latitude: lat, longitude: lng });
       } else if (modalMode === "edit" && selected) {
-        await updateLocation(selected.id, { name: form.name.trim(), city: form.city.trim() });
+        await updateLocation(selected.id, { name: form.name.trim(), city: form.city.trim(), latitude: lat, longitude: lng });
       }
       await load();
       closeModal();
@@ -220,6 +222,16 @@ export function AdminLocations() {
                   )}
                 </div>
               </label>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <label className="field">
+                  <span>קו רוחב (אופציונלי)</span>
+                  <input dir="ltr" type="number" step="any" value={form.latitude} onChange={(e) => setForm({ ...form, latitude: e.target.value })} placeholder="32.0853" />
+                </label>
+                <label className="field">
+                  <span>קו אורך (אופציונלי)</span>
+                  <input dir="ltr" type="number" step="any" value={form.longitude} onChange={(e) => setForm({ ...form, longitude: e.target.value })} placeholder="34.7818" />
+                </label>
+              </div>
             </div>
 
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>

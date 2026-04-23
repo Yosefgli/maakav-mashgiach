@@ -12,10 +12,12 @@ import {
   runMockScan,
   toggleMockAssignment,
   updateMockLocation,
+  updateMockLog,
 } from "./mock-data";
 import { getSupabaseBrowserClient } from "./supabase";
 import type {
   AdminDashboardData,
+  GpsCoords,
   Location,
   MashgiachDashboardData,
   Profile,
@@ -24,14 +26,14 @@ import type {
   UserRecord,
   VisitLog,
 } from "./types";
-import { filterLogs, formatDateTime } from "./utils";
+import { filterLogs, formatDateTime, haversineMeters } from "./utils";
 
 export type DashboardFilters = {
   from: string;
   to: string;
-  mashgiachName: string;
-  locationName: string;
-  city: string;
+  mashgiachNames: string[];
+  locationNames: string[];
+  cities: string[];
 };
 
 type VisitLogRow = {
@@ -61,6 +63,8 @@ type LocationRow = {
   qr_code: string;
   is_active: boolean;
   created_at: string;
+  latitude: number | null;
+  longitude: number | null;
 };
 
 type AssignmentRow = {
@@ -158,15 +162,22 @@ export async function fetchAdminDashboard(
   };
 }
 
-export async function submitVisitScan(profile: Profile, qrCode: string): Promise<ScanResult> {
+export async function submitVisitScan(profile: Profile, qrCode: string, coords?: GpsCoords): Promise<ScanResult> {
   if (!qrCode.trim()) return { status: "error", message: "יש להזין או לסרוק קוד מקום לפני שליחה." };
 
   const client = getSupabaseBrowserClient();
-  if (!client) return runMockScan(profile, qrCode);
+  if (!client) return runMockScan(profile, qrCode, coords);
 
   const { data, error } = await client.rpc("register_visit_by_qr", { p_qr_code: qrCode });
   if (error) throw new Error("הפעולה נכשלה בצד השרת.");
-  return { status: data.status, message: data.message };
+
+  // Client-side distance check using location coords returned by RPC
+  let distanceMeters: number | null = null;
+  if (coords && data.location_latitude != null && data.location_longitude != null) {
+    distanceMeters = haversineMeters(coords.latitude, coords.longitude, data.location_latitude as number, data.location_longitude as number);
+  }
+
+  return { status: data.status as ScanResult["status"], message: data.message as string, locationName: data.location_name as string | undefined, distanceMeters };
 }
 
 // ── Locations ─────────────────────────────────────
@@ -177,26 +188,26 @@ export async function fetchLocations(): Promise<Location[]> {
 
   const { data, error } = await client
     .from("locations")
-    .select("id, name, city, qr_code, is_active, created_at")
+    .select("id, name, city, qr_code, is_active, created_at, latitude, longitude")
     .order("created_at", { ascending: false });
   if (error) throw error;
   return ((data ?? []) as LocationRow[]).map(mapLocation);
 }
 
-export async function createLocation(input: { name: string; city: string; qrCode: string }): Promise<Location> {
+export async function createLocation(input: { name: string; city: string; qrCode: string; latitude?: number | null; longitude?: number | null }): Promise<Location> {
   const client = getSupabaseBrowserClient();
   if (!client) return addMockLocation(input);
 
   const { data, error } = await client
     .from("locations")
-    .insert({ name: input.name, city: input.city, qr_code: input.qrCode })
+    .insert({ name: input.name, city: input.city, qr_code: input.qrCode, latitude: input.latitude ?? null, longitude: input.longitude ?? null })
     .select()
     .single();
   if (error) throw error;
   return mapLocation(data as LocationRow);
 }
 
-export async function updateLocation(id: string, input: Partial<{ name: string; city: string; isActive: boolean }>): Promise<void> {
+export async function updateLocation(id: string, input: Partial<{ name: string; city: string; isActive: boolean; latitude: number | null; longitude: number | null }>): Promise<void> {
   const client = getSupabaseBrowserClient();
   if (!client) { updateMockLocation(id, input); return; }
 
@@ -204,6 +215,8 @@ export async function updateLocation(id: string, input: Partial<{ name: string; 
   if (input.name !== undefined) patch.name = input.name;
   if (input.city !== undefined) patch.city = input.city;
   if (input.isActive !== undefined) patch.is_active = input.isActive;
+  if (input.latitude !== undefined) patch.latitude = input.latitude;
+  if (input.longitude !== undefined) patch.longitude = input.longitude;
 
   const { error } = await client.from("locations").update(patch).eq("id", id);
   if (error) throw error;
@@ -300,6 +313,28 @@ export async function deleteVisitLog(id: string): Promise<void> {
   if (error) throw error;
 }
 
+export async function updateVisitLog(id: string, data: { status: VisitLog["status"]; message: string }): Promise<void> {
+  const client = getSupabaseBrowserClient();
+  if (!client) { updateMockLog(id, data); return; }
+
+  const { error } = await client.from("visit_logs").update({ status: data.status, message: data.message }).eq("id", id);
+  if (error) throw error;
+}
+
+// ── Real-time ─────────────────────────────────────
+
+export function subscribeToLogs(callback: () => void): (() => void) | null {
+  const client = getSupabaseBrowserClient();
+  if (!client) return null;
+
+  const channel = client
+    .channel("visit_logs_realtime")
+    .on("postgres_changes", { event: "*", schema: "public", table: "visit_logs" }, callback)
+    .subscribe();
+
+  return () => { void client.removeChannel(channel); };
+}
+
 // ── Internal helpers ──────────────────────────────
 
 async function fetchProfileByUserId(userId: string, fallbackEmail: string): Promise<Profile> {
@@ -335,9 +370,9 @@ async function fetchLogs(profile: Profile, filters: DashboardFilters): Promise<V
   if (profile.role === "mashgiach") query = query.eq("mashgiach_user_id", profile.userId);
   if (filters.from) query = query.gte("occurred_date", filters.from);
   if (filters.to) query = query.lte("occurred_date", filters.to);
-  if (profile.role === "admin" && filters.mashgiachName) query = query.eq("mashgiach_display_name", filters.mashgiachName);
-  if (profile.role === "admin" && filters.locationName) query = query.eq("location_display_name", filters.locationName);
-  if (profile.role === "admin" && filters.city) query = query.eq("city", filters.city);
+  if (profile.role === "admin" && filters.mashgiachNames.length > 0) query = query.in("mashgiach_display_name", filters.mashgiachNames);
+  if (profile.role === "admin" && filters.locationNames.length > 0) query = query.in("location_display_name", filters.locationNames);
+  if (profile.role === "admin" && filters.cities.length > 0) query = query.in("city", filters.cities);
 
   const { data, error } = await query;
   if (error) throw error;
@@ -345,7 +380,7 @@ async function fetchLogs(profile: Profile, filters: DashboardFilters): Promise<V
 }
 
 function mapLocation(row: LocationRow): Location {
-  return { id: row.id, name: row.name, city: row.city, qrCode: row.qr_code, isActive: row.is_active, createdAt: row.created_at };
+  return { id: row.id, name: row.name, city: row.city, qrCode: row.qr_code, isActive: row.is_active, createdAt: row.created_at, latitude: row.latitude, longitude: row.longitude };
 }
 
 function mapVisitLogRow(row: VisitLogRow): VisitLog {

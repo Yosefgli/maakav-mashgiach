@@ -16,6 +16,8 @@ create table if not exists public.locations (
   city text not null,
   qr_code text not null unique,
   is_active boolean not null default true,
+  latitude float8,
+  longitude float8,
   created_at timestamptz not null default now()
 );
 
@@ -111,6 +113,10 @@ create policy "logs: own or admin select"
   on public.visit_logs for select
   using (mashgiach_user_id = auth.uid() or public.current_user_role() = 'admin');
 
+create policy "logs: admin update"
+  on public.visit_logs for update
+  using (public.current_user_role() = 'admin');
+
 create policy "logs: admin delete"
   on public.visit_logs for delete
   using (public.current_user_role() = 'admin');
@@ -161,7 +167,7 @@ begin
   insert into public.visit_logs (mashgiach_user_id, location_id, occurred_at, occurred_date, occurred_time, mashgiach_display_name, location_display_name, city, status, message)
   values (v_profile.user_id, v_location.id, v_now, v_now::date, v_now::time, v_profile.full_name, v_location.name, v_location.city, v_status, v_message);
 
-  return jsonb_build_object('status', v_status, 'message', v_message, 'location_name', v_location.name, 'city', v_location.city);
+  return jsonb_build_object('status', v_status, 'message', v_message, 'location_name', v_location.name, 'city', v_location.city, 'location_latitude', v_location.latitude, 'location_longitude', v_location.longitude);
 end;
 $$;
 

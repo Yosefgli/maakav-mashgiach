@@ -46,40 +46,32 @@ export function filterLogs<T extends VisitLog>(
   filters: {
     from?: string;
     to?: string;
-    mashgiachName?: string;
-    locationName?: string;
-    city?: string;
+    mashgiachNames?: string[];
+    locationNames?: string[];
+    cities?: string[];
   },
 ) {
   return logs.filter((log) => {
-    if (filters.from && log.occurredDate < filters.from) {
-      return false;
-    }
-
-    if (filters.to && log.occurredDate > filters.to) {
-      return false;
-    }
-
-    if (
-      filters.mashgiachName &&
-      !log.mashgiachName.toLowerCase().includes(filters.mashgiachName.toLowerCase())
-    ) {
-      return false;
-    }
-
-    if (
-      filters.locationName &&
-      !(log.locationName ?? "").toLowerCase().includes(filters.locationName.toLowerCase())
-    ) {
-      return false;
-    }
-
-    if (filters.city && !(log.city ?? "").toLowerCase().includes(filters.city.toLowerCase())) {
-      return false;
-    }
-
+    if (filters.from && log.occurredDate < filters.from) return false;
+    if (filters.to && log.occurredDate > filters.to) return false;
+    if (filters.mashgiachNames?.length && !filters.mashgiachNames.includes(log.mashgiachName)) return false;
+    if (filters.locationNames?.length && !filters.locationNames.includes(log.locationName ?? "")) return false;
+    if (filters.cities?.length && !filters.cities.includes(log.city ?? "")) return false;
     return true;
   });
+}
+
+export function haversineMeters(
+  lat1: number, lon1: number,
+  lat2: number, lon2: number,
+): number {
+  const R = 6371000;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 export function getDateParts(iso: string) {

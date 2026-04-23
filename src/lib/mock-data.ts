@@ -1,5 +1,5 @@
-import type { Location, Profile, Role, ScanResult, UserRecord, VisitLog } from "./types";
-import { getDateParts } from "./utils";
+import type { GpsCoords, Location, Profile, Role, ScanResult, UserRecord, VisitLog } from "./types";
+import { getDateParts, haversineMeters } from "./utils";
 
 const now = Date.now();
 
@@ -19,9 +19,9 @@ const mockProfiles: Record<Role, Profile> = {
 };
 
 let mockLocations: Location[] = [
-  { id: "loc-1", qrCode: "LOC-1001-XYZ", name: "מאפיית הצפון", city: "חיפה", isActive: true, createdAt: new Date(now - 30 * 86400000).toISOString() },
-  { id: "loc-2", qrCode: "LOC-2001-XYZ", name: "מפעל הגליל", city: "עכו", isActive: true, createdAt: new Date(now - 25 * 86400000).toISOString() },
-  { id: "loc-3", qrCode: "LOC-3001-XYZ", name: "יקב הכרם", city: "צפת", isActive: false, createdAt: new Date(now - 20 * 86400000).toISOString() },
+  { id: "loc-1", qrCode: "LOC-1001-XYZ", name: "מאפיית הצפון", city: "חיפה", isActive: true, createdAt: new Date(now - 30 * 86400000).toISOString(), latitude: 32.7940, longitude: 34.9896 },
+  { id: "loc-2", qrCode: "LOC-2001-XYZ", name: "מפעל הגליל", city: "עכו", isActive: true, createdAt: new Date(now - 25 * 86400000).toISOString(), latitude: 32.9275, longitude: 35.0785 },
+  { id: "loc-3", qrCode: "LOC-3001-XYZ", name: "יקב הכרם", city: "צפת", isActive: false, createdAt: new Date(now - 20 * 86400000).toISOString(), latitude: 32.9648, longitude: 35.4956 },
 ];
 
 let mockUsers: UserRecord[] = [
@@ -55,12 +55,12 @@ export function getMockAllowedLocationsCount() { return allowedLocationIds.lengt
 
 // Locations
 export function getMockLocations() { return [...mockLocations]; }
-export function addMockLocation(data: { name: string; city: string; qrCode: string }) {
-  const loc: Location = { id: `loc-${Date.now()}`, ...data, isActive: true, createdAt: new Date().toISOString() };
+export function addMockLocation(data: { name: string; city: string; qrCode: string; latitude?: number | null; longitude?: number | null }) {
+  const loc: Location = { id: `loc-${Date.now()}`, ...data, isActive: true, createdAt: new Date().toISOString(), latitude: data.latitude ?? null, longitude: data.longitude ?? null };
   mockLocations = [loc, ...mockLocations];
   return loc;
 }
-export function updateMockLocation(id: string, data: Partial<{ name: string; city: string; isActive: boolean }>) {
+export function updateMockLocation(id: string, data: Partial<{ name: string; city: string; isActive: boolean; latitude: number | null; longitude: number | null }>) {
   mockLocations = mockLocations.map((l) => l.id === id ? { ...l, ...data } : l);
 }
 export function deleteMockLocation(id: string) {
@@ -91,9 +91,12 @@ export function toggleMockAssignment(userId: string, locationId: string, assign:
 export function deleteMockLog(id: string) {
   mockLogs = mockLogs.filter((l) => l.id !== id);
 }
+export function updateMockLog(id: string, data: Partial<{ status: VisitLog["status"]; message: string }>) {
+  mockLogs = mockLogs.map((l) => l.id === id ? { ...l, ...data } : l);
+}
 
 // Scan
-export function runMockScan(profile: Profile, qrCode: string): ScanResult {
+export function runMockScan(profile: Profile, qrCode: string, coords?: GpsCoords): ScanResult {
   const location = mockLocations.find((l) => l.qrCode.toLowerCase() === qrCode.toLowerCase() && l.isActive);
   if (!location) {
     appendMockLog({ mashgiachName: profile.fullName, locationName: null, city: null, status: "invalid_location", message: "הקוד שנסרק אינו מוכר במערכת." });
@@ -101,10 +104,13 @@ export function runMockScan(profile: Profile, qrCode: string): ScanResult {
   }
   if (!allowedLocationIds.includes(location.id)) {
     appendMockLog({ mashgiachName: profile.fullName, locationName: location.name, city: location.city, status: "unauthorized", message: "אין לך הרשאה לבצע כניסה למקום זה." });
-    return { status: "unauthorized", message: "אין לך הרשאה לבצע כניסה למקום זה." };
+    return { status: "unauthorized", message: "אין לך הרשאה לבצע כניסה למקום זה.", locationName: location.name };
   }
+  const distanceMeters = (coords && location.latitude !== null && location.longitude !== null)
+    ? haversineMeters(coords.latitude, coords.longitude, location.latitude!, location.longitude!)
+    : null;
   appendMockLog({ mashgiachName: profile.fullName, locationName: location.name, city: location.city, status: "success", message: "הכניסה בוצעה בהצלחה ונרשמה בלוג." });
-  return { status: "success", message: `הכניסה ל-${location.name} נרשמה בהצלחה.` };
+  return { status: "success", message: `הכניסה ל-${location.name} נרשמה בהצלחה.`, locationName: location.name, distanceMeters };
 }
 
 function appendMockLog({ city, locationName, mashgiachName, message, status }: {
