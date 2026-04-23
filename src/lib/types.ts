@@ -9,6 +9,24 @@ export type Profile = {
   role: Role;
 };
 
+export type Location = {
+  id: string;
+  name: string;
+  city: string;
+  qrCode: string;
+  isActive: boolean;
+  createdAt: string;
+  latitude: number | null;
+  longitude: number | null;
+};
+
+export type GpsCoords = { latitude: number; longitude: number };
+
+export type UserRecord = Profile & {
+  createdAt: string;
+  assignedLocationIds: string[];
+};
+
 export type VisitLog = {
   id: string;
   occurredAt: string;
@@ -61,6 +79,8 @@ export type AdminDashboardData = {
 export type ScanResult = {
   status: VisitStatus;
   message: string;
+  locationName?: string;
+  distanceMeters?: number | null;
 };
 
 export type LoginFormState = {
