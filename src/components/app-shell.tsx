@@ -37,12 +37,7 @@ import { formatDateTime, formatRelativeTime, getStatusTone } from "@/lib/utils";
 import { QrScannerDialog } from "./qr-scanner-dialog";
 
 const REFRESH_INTERVAL_MS = 60_000;
-
-const EMPTY_LOGIN: LoginFormState = {
-  email: "",
-  password: "",
-};
-
+const EMPTY_LOGIN: LoginFormState = { email: "", password: "" };
 const EMPTY_FILTERS: DashboardFilters = {
   from: "",
   to: "",
@@ -58,9 +53,7 @@ export function AppShell() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filters, setFilters] = useState<DashboardFilters>(EMPTY_FILTERS);
-  const [mashgiachData, setMashgiachData] = useState<MashgiachDashboardData | null>(
-    null,
-  );
+  const [mashgiachData, setMashgiachData] = useState<MashgiachDashboardData | null>(null);
   const [adminData, setAdminData] = useState<AdminDashboardData | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
@@ -70,30 +63,19 @@ export function AppShell() {
 
   const loadDashboard = useCallback(
     async (nextProfile: Profile, nextFilters: DashboardFilters, silent = false) => {
-      if (!silent) {
-        setRefreshing(true);
-      }
-
+      if (!silent) setRefreshing(true);
       try {
         if (nextProfile.role === "mashgiach") {
-          const data = await fetchMashgiachDashboard(nextProfile, nextFilters);
-          setMashgiachData(data);
+          setMashgiachData(await fetchMashgiachDashboard(nextProfile, nextFilters));
           setAdminData(null);
         } else {
-          const data = await fetchAdminDashboard(nextProfile, nextFilters);
-          setAdminData(data);
+          setAdminData(await fetchAdminDashboard(nextProfile, nextFilters));
           setMashgiachData(null);
         }
-      } catch (dashboardError) {
-        setError(
-          dashboardError instanceof Error
-            ? dashboardError.message
-            : "אירעה תקלה בטעינת הנתונים.",
-        );
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "אירעה תקלה בטעינת הנתונים.");
       } finally {
-        if (!silent) {
-          setRefreshing(false);
-        }
+        if (!silent) setRefreshing(false);
       }
     },
     [],
@@ -101,54 +83,29 @@ export function AppShell() {
 
   useEffect(() => {
     let active = true;
-
     const bootstrap = async () => {
       setLoadingProfile(true);
       try {
         const activeProfile = await getCurrentSessionProfile();
-        if (!active) {
-          return;
-        }
-
+        if (!active) return;
         setProfile(activeProfile);
         setError(null);
-
-        if (activeProfile) {
-          await loadDashboard(activeProfile, EMPTY_FILTERS);
-        }
-      } catch (bootstrapError) {
-        if (!active) {
-          return;
-        }
-
-        setError(
-          bootstrapError instanceof Error
-            ? bootstrapError.message
-            : "לא הצלחנו לזהות משתמש מחובר.",
-        );
+        if (activeProfile) await loadDashboard(activeProfile, EMPTY_FILTERS);
+      } catch (err) {
+        if (active) setError(err instanceof Error ? err.message : "לא הצלחנו לזהות משתמש מחובר.");
       } finally {
-        if (active) {
-          setLoadingProfile(false);
-        }
+        if (active) setLoadingProfile(false);
       }
     };
-
     void bootstrap();
-
-    return () => {
-      active = false;
-    };
+    return () => { active = false; };
   }, [loadDashboard]);
 
   useEffect(() => {
-    if (!profile) {
-      return;
-    }
-
+    if (!profile) return;
     const interval = window.setInterval(() => {
       void loadDashboard(profile, filters, true);
     }, REFRESH_INTERVAL_MS);
-
     return () => window.clearInterval(interval);
   }, [filters, loadDashboard, profile]);
 
@@ -156,16 +113,13 @@ export function AppShell() {
     event.preventDefault();
     setBusy(true);
     setError(null);
-
     try {
       const nextProfile = await signInWithEmail(loginForm.email, loginForm.password);
       setProfile(nextProfile);
       setFilters(EMPTY_FILTERS);
       await loadDashboard(nextProfile, EMPTY_FILTERS);
-    } catch (loginError) {
-      setError(
-        loginError instanceof Error ? loginError.message : "ההתחברות נכשלה.",
-      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "ההתחברות נכשלה.");
     } finally {
       setBusy(false);
     }
@@ -180,10 +134,8 @@ export function AppShell() {
       setAdminData(null);
       setScanFeedback(null);
       setLoginForm(EMPTY_LOGIN);
-    } catch (logoutError) {
-      setError(
-        logoutError instanceof Error ? logoutError.message : "לא הצלחנו להתנתק.",
-      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "לא הצלחנו להתנתק.");
     } finally {
       setBusy(false);
     }
@@ -192,173 +144,158 @@ export function AppShell() {
   const handleDemoLogin = async (role: Role) => {
     setBusy(true);
     setError(null);
-
     try {
       const nextProfile = await getCurrentSessionProfile(role);
-      if (!nextProfile) {
-        throw new Error("לא נמצא משתמש דמו.");
-      }
-
+      if (!nextProfile) throw new Error("לא נמצא משתמש דמו.");
       setProfile(nextProfile);
       setFilters(EMPTY_FILTERS);
       await loadDashboard(nextProfile, EMPTY_FILTERS);
-    } catch (demoError) {
-      setError(demoError instanceof Error ? demoError.message : "כניסת הדמו נכשלה.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "כניסת הדמו נכשלה.");
     } finally {
       setBusy(false);
     }
   };
 
   const onRefresh = async () => {
-    if (!profile) {
-      return;
-    }
-
+    if (!profile) return;
     await loadDashboard(profile, filters);
   };
 
   const onScan = async (qrCode: string) => {
-    if (!profile) {
-      return;
-    }
-
+    if (!profile) return;
     setBusy(true);
     try {
       const result = await submitVisitScan(profile, qrCode);
       setScanFeedback(result);
       await loadDashboard(profile, filters, true);
-    } catch (scanError) {
+    } catch (err) {
       setScanFeedback({
         status: "error",
-        message: scanError instanceof Error ? scanError.message : "הסריקה נכשלה.",
+        message: err instanceof Error ? err.message : "הסריקה נכשלה.",
       });
     } finally {
       setBusy(false);
     }
   };
 
-  const activeDataTitle = useMemo(() => {
-    if (!profile) {
-      return "מעקב ביקורי משגיחים";
-    }
-
+  const pageTitle = useMemo(() => {
+    if (!profile) return "מעקב ביקורי משגיחים";
     return profile.role === "admin" ? "דשבורד מנהל" : "דשבורד משגיח";
   }, [profile]);
 
+  if (loadingProfile) {
+    return (
+      <div className="app">
+        <div className="loadingState">
+          <RefreshCw size={20} className="spin" />
+          <span>טוען...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!profile) {
+    return (
+      <div className="app">
+        <LoginPanel
+          busy={busy}
+          configured={configured}
+          form={loginForm}
+          onChange={setLoginForm}
+          onSubmit={handleLogin}
+          onDemoLogin={handleDemoLogin}
+          error={error}
+        />
+      </div>
+    );
+  }
+
   return (
-    <div className="shell">
-      <div className="shell__backdrop" />
-      <main className="shell__content">
-        <section className="hero">
-          <div className="hero__copy">
-            <span className="hero__eyebrow">
-              <ShieldCheck size={16} />
-              בקרה שוטפת בזמן אמת
-            </span>
-            <h1>{activeDataTitle}</h1>
-          </div>
+    <div className="app">
+      <header className="appHeader">
+        <div className="appHeader__brand">
+          <ShieldCheck size={18} className="appHeader__icon" />
+          <div className="appHeader__title">{pageTitle}</div>
+        </div>
 
-          <div className="hero__status">
-            <StatusChip
-              icon={<RefreshCw size={16} />}
-              label="רענון אוטומטי"
-              value="כל דקה"
-            />
-            <StatusChip
-              icon={<QrCode size={16} />}
-              label="סריקת כניסה"
-              value="QR בזמן אמת"
-            />
-            <StatusChip
-              icon={<Users size={16} />}
-              label="מצב מערכת"
-              value={configured ? "מחוברת ל-Supabase" : "מצב דמו עד חיבור"}
-            />
-          </div>
-        </section>
+        <div className="appHeader__user">
+          <strong>{profile.fullName}</strong>
+          <span>{profile.role === "admin" ? "מנהל" : "משגיח"}</span>
+        </div>
 
+        <div className="appHeader__actions">
+          <button
+            className="button button--icon button--ghost"
+            onClick={() => void onRefresh()}
+            disabled={refreshing || busy}
+            type="button"
+            aria-label="רענון"
+          >
+            <RefreshCw size={16} className={refreshing ? "spin" : ""} />
+          </button>
+
+          {profile.role === "mashgiach" ? (
+            <button
+              className="button button--primary headerScanBtn"
+              onClick={() => setScannerOpen(true)}
+              type="button"
+            >
+              <QrCode size={15} />
+              כניסה חדשה
+            </button>
+          ) : null}
+
+          <button
+            className="button button--icon button--ghost"
+            onClick={() => void handleLogout()}
+            disabled={busy}
+            type="button"
+            aria-label="יציאה"
+          >
+            <LogOut size={16} />
+          </button>
+        </div>
+      </header>
+
+      <main className="appMain">
         {error ? <InlineMessage tone="danger" text={error} /> : null}
 
         {!configured ? (
-          <section className="setupBanner">
-            <strong>מצב דמו</strong>
-            <p>צור <code>.env.local</code> לפי <code>README.md</code> כדי להתחבר ל-Supabase.</p>
-          </section>
+          <div className="banner">
+            <div>
+              <strong>מצב דמו</strong>
+              צור <code>.env.local</code> לפי <code>README.md</code> כדי להתחבר ל-Supabase.
+            </div>
+          </div>
         ) : null}
 
-        {loadingProfile ? (
-          <section className="panel panel--centered">
-            <RefreshCw size={18} className="spin" />
-            טוען מערכת...
-          </section>
-        ) : profile ? (
-          <>
-            <section className="toolbar">
-              <div className="toolbar__user">
-                <div>
-                  <strong>{profile.fullName}</strong>
-                  <span>{profile.role === "admin" ? "מנהל" : "משגיח"}</span>
-                </div>
-              </div>
+        <FiltersBar
+          profile={profile}
+          filters={filters}
+          onChange={setFilters}
+          onSubmit={() => void loadDashboard(profile, filters)}
+        />
 
-              <div className="toolbar__actions">
-                <button
-                  className="button button--ghost"
-                  onClick={() => void onRefresh()}
-                  disabled={refreshing || busy}
-                  type="button"
-                >
-                  <RefreshCw size={16} className={refreshing ? "spin" : ""} />
-                  רענון
-                </button>
-                {profile.role === "mashgiach" ? (
-                  <button
-                    className="button button--primary"
-                    onClick={() => setScannerOpen(true)}
-                    type="button"
-                  >
-                    <QrCode size={16} />
-                    כניסה חדשה
-                  </button>
-                ) : null}
-                <button
-                  className="button button--ghost"
-                  onClick={() => void handleLogout()}
-                  disabled={busy}
-                  type="button"
-                >
-                  <LogOut size={16} />
-                  יציאה
-                </button>
-              </div>
-            </section>
+        {profile.role === "mashgiach" && mashgiachData ? (
+          <MashgiachDashboard data={mashgiachData} />
+        ) : null}
 
-            <FiltersBar
-              profile={profile}
-              filters={filters}
-              onChange={(nextFilters) => setFilters(nextFilters)}
-              onSubmit={() => void loadDashboard(profile, filters)}
-            />
-
-            {profile.role === "mashgiach" && mashgiachData ? (
-              <MashgiachDashboard data={mashgiachData} />
-            ) : null}
-
-            {profile.role === "admin" && adminData ? (
-              <AdminDashboard data={adminData} />
-            ) : null}
-          </>
-        ) : (
-          <LoginPanel
-            busy={busy}
-            configured={configured}
-            form={loginForm}
-            onChange={setLoginForm}
-            onSubmit={handleLogin}
-            onDemoLogin={handleDemoLogin}
-          />
-        )}
+        {profile.role === "admin" && adminData ? (
+          <AdminDashboard data={adminData} />
+        ) : null}
       </main>
+
+      {profile.role === "mashgiach" ? (
+        <button
+          className="fab"
+          onClick={() => setScannerOpen(true)}
+          type="button"
+          aria-label="סריקת כניסה חדשה"
+        >
+          <QrCode size={24} />
+        </button>
+      ) : null}
 
       <QrScannerDialog
         open={scannerOpen}
@@ -370,10 +307,7 @@ export function AppShell() {
       />
 
       {scanFeedback ? (
-        <ScanResultModal
-          feedback={scanFeedback}
-          onClose={() => setScanFeedback(null)}
-        />
+        <ScanResultModal feedback={scanFeedback} onClose={() => setScanFeedback(null)} />
       ) : null}
     </div>
   );
@@ -386,6 +320,7 @@ function LoginPanel({
   onChange,
   onSubmit,
   onDemoLogin,
+  error,
 }: {
   busy: boolean;
   configured: boolean;
@@ -393,13 +328,17 @@ function LoginPanel({
   onChange: (value: LoginFormState) => void;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
   onDemoLogin: (role: Role) => void;
+  error: string | null;
 }) {
   return (
-    <section className="login">
-      <div className="panel login__panel">
-        <div className="panel__header">
-          <h2>התחברות למערכת</h2>
+    <div className="loginWrap">
+      <div className="loginCard">
+        <div className="loginCard__brand">
+          <ShieldCheck size={26} />
+          <h1>מעקב ביקורי משגיחים</h1>
         </div>
+
+        {error ? <InlineMessage tone="danger" text={error} /> : null}
 
         <form className="form" onSubmit={onSubmit}>
           <label className="field">
@@ -407,9 +346,7 @@ function LoginPanel({
             <input
               autoComplete="email"
               dir="ltr"
-              onChange={(event) =>
-                onChange({ ...form, email: event.target.value })
-              }
+              onChange={(e) => onChange({ ...form, email: e.target.value })}
               placeholder="name@example.com"
               type="email"
               value={form.email}
@@ -421,16 +358,18 @@ function LoginPanel({
             <input
               autoComplete="current-password"
               dir="ltr"
-              onChange={(event) =>
-                onChange({ ...form, password: event.target.value })
-              }
-              placeholder="********"
+              onChange={(e) => onChange({ ...form, password: e.target.value })}
+              placeholder="••••••••"
               type="password"
               value={form.password}
             />
           </label>
 
-          <button className="button button--primary button--wide" disabled={!configured || busy} type="submit">
+          <button
+            className="button button--primary button--wide"
+            disabled={!configured || busy}
+            type="submit"
+          >
             {busy ? "מתחבר..." : "התחברות"}
           </button>
         </form>
@@ -442,22 +381,24 @@ function LoginPanel({
               <button
                 className="button button--ghost"
                 onClick={() => onDemoLogin("mashgiach")}
+                disabled={busy}
                 type="button"
               >
-                דמו משגיח
+                משגיח
               </button>
               <button
                 className="button button--ghost"
                 onClick={() => onDemoLogin("admin")}
+                disabled={busy}
                 type="button"
               >
-                דמו מנהל
+                מנהל
               </button>
             </div>
           </div>
         ) : null}
       </div>
-    </section>
+    </div>
   );
 }
 
@@ -473,178 +414,180 @@ function FiltersBar({
   profile: Profile;
 }) {
   return (
-    <section className="panel filters">
-      <div className="panel__header panel__header--inline">
-        <div>
-          <h2>חיפוש וסינון</h2>
-        </div>
+    <div className="card">
+      <div className="card__header--inline">
+        <span className="card__title" style={{ margin: 0 }}>סינון</span>
         <button className="button button--primary" onClick={onSubmit} type="button">
-          החל סינון
+          החל
         </button>
       </div>
+      <div className="card__body">
+        <div className="filtersGrid">
+          <label className="field">
+            <span>מתאריך</span>
+            <input
+              onChange={(e) => onChange({ ...filters, from: e.target.value })}
+              type="date"
+              value={filters.from}
+            />
+          </label>
+          <label className="field">
+            <span>עד תאריך</span>
+            <input
+              onChange={(e) => onChange({ ...filters, to: e.target.value })}
+              type="date"
+              value={filters.to}
+            />
+          </label>
 
-      <div className="filters__grid">
-        <label className="field">
-          <span>מתאריך</span>
-          <input
-            onChange={(event) => onChange({ ...filters, from: event.target.value })}
-            type="date"
-            value={filters.from}
-          />
-        </label>
-        <label className="field">
-          <span>עד תאריך</span>
-          <input
-            onChange={(event) => onChange({ ...filters, to: event.target.value })}
-            type="date"
-            value={filters.to}
-          />
-        </label>
-
-        {profile.role === "admin" ? (
-          <>
-            <label className="field">
-              <span>משגיח</span>
-              <input
-                onChange={(event) =>
-                  onChange({ ...filters, mashgiachName: event.target.value })
-                }
-                placeholder="שם משגיח"
-                value={filters.mashgiachName}
-              />
-            </label>
-            <label className="field">
-              <span>מקום</span>
-              <input
-                onChange={(event) =>
-                  onChange({ ...filters, locationName: event.target.value })
-                }
-                placeholder="שם מקום"
-                value={filters.locationName}
-              />
-            </label>
-            <label className="field">
-              <span>עיר</span>
-              <input
-                onChange={(event) => onChange({ ...filters, city: event.target.value })}
-                placeholder="עיר"
-                value={filters.city}
-              />
-            </label>
-          </>
-        ) : null}
+          {profile.role === "admin" ? (
+            <>
+              <label className="field">
+                <span>משגיח</span>
+                <input
+                  onChange={(e) => onChange({ ...filters, mashgiachName: e.target.value })}
+                  placeholder="שם משגיח"
+                  value={filters.mashgiachName}
+                />
+              </label>
+              <label className="field">
+                <span>מקום</span>
+                <input
+                  onChange={(e) => onChange({ ...filters, locationName: e.target.value })}
+                  placeholder="שם מקום"
+                  value={filters.locationName}
+                />
+              </label>
+              <label className="field">
+                <span>עיר</span>
+                <input
+                  onChange={(e) => onChange({ ...filters, city: e.target.value })}
+                  placeholder="עיר"
+                  value={filters.city}
+                />
+              </label>
+            </>
+          ) : null}
+        </div>
       </div>
-    </section>
+    </div>
   );
 }
 
 function MashgiachDashboard({ data }: { data: MashgiachDashboardData }) {
   return (
-    <div className="dashboard">
-      <section className="statsGrid">
-        <StatCard icon={<CheckCircle2 size={18} />} label="כניסות מוצלחות" value={String(data.metrics.successfulVisits)} />
-        <StatCard icon={<AlertCircle size={18} />} label="כניסות חסומות" value={String(data.metrics.blockedVisits)} />
-        <StatCard icon={<Building2 size={18} />} label="מקומות מורשים" value={String(data.metrics.allowedLocations)} />
-        <StatCard
-          icon={<Clock3 size={18} />}
-          label="ביקור אחרון"
-          value={data.metrics.lastVisitLabel ?? "עדיין לא בוצע"}
-        />
-      </section>
+    <>
+      <div className="statsGrid">
+        <StatCard icon={<CheckCircle2 size={16} />} label="כניסות מוצלחות" value={String(data.metrics.successfulVisits)} />
+        <StatCard icon={<AlertCircle size={16} />} label="כניסות חסומות" value={String(data.metrics.blockedVisits)} />
+        <StatCard icon={<Building2 size={16} />} label="מקומות מורשים" value={String(data.metrics.allowedLocations)} />
+        <StatCard icon={<Clock3 size={16} />} label="ביקור אחרון" value={data.metrics.lastVisitLabel ?? "עדיין לא"} />
+      </div>
 
-      <section className="panel">
-        <div className="panel__header">
-          <h2>הכניסות האחרונות שלי</h2>
+      <div className="card">
+        <div className="card__header">
+          <div className="card__title">הכניסות האחרונות שלי</div>
         </div>
-        <LogsTable rows={data.logs} />
-      </section>
-    </div>
+        <div className="card__body" style={{ padding: "0 0 4px" }}>
+          <LogsTable rows={data.logs} />
+        </div>
+      </div>
+    </>
   );
 }
 
 function AdminDashboard({ data }: { data: AdminDashboardData }) {
   return (
-    <div className="dashboard">
-      <section className="statsGrid">
-        <StatCard icon={<CheckCircle2 size={18} />} label="סה״כ כניסות" value={String(data.metrics.totalLogs)} />
-        <StatCard icon={<Users size={18} />} label="משגיחים פעילים" value={String(data.metrics.activeMashgichim)} />
-        <StatCard icon={<Building2 size={18} />} label="מקומות עם ביקורים" value={String(data.metrics.activeLocations)} />
-        <StatCard icon={<CalendarDays size={18} />} label="חודש נוכחי" value={String(data.metrics.currentMonthVisits)} />
-      </section>
+    <>
+      <div className="statsGrid">
+        <StatCard icon={<CheckCircle2 size={16} />} label="סה״כ כניסות" value={String(data.metrics.totalLogs)} />
+        <StatCard icon={<Users size={16} />} label="משגיחים פעילים" value={String(data.metrics.activeMashgichim)} />
+        <StatCard icon={<Building2 size={16} />} label="מקומות עם ביקורים" value={String(data.metrics.activeLocations)} />
+        <StatCard icon={<CalendarDays size={16} />} label="חודש נוכחי" value={String(data.metrics.currentMonthVisits)} />
+      </div>
 
-      <section className="panel">
-        <div className="panel__header">
-          <h2>כל הלוגים האחרונים</h2>
+      <div className="card">
+        <div className="card__header">
+          <div className="card__title">כל הלוגים האחרונים</div>
         </div>
-        <LogsTable rows={data.logs} />
-      </section>
+        <div className="card__body" style={{ padding: "0 0 4px" }}>
+          <LogsTable rows={data.logs} />
+        </div>
+      </div>
 
-      <section className="splitGrid">
-        <section className="panel">
-          <div className="panel__header">
-            <h2>כניסות לפי מקום</h2>
+      <div className="splitGrid">
+        <div className="card">
+          <div className="card__header">
+            <div className="card__title">כניסות לפי מקום</div>
           </div>
-          <SummaryTable
-            rows={data.byLocation}
-            columns={[
-              { key: "locationName", label: "מקום" },
-              { key: "city", label: "עיר" },
-              { key: "count", label: "מספר כניסות" },
-            ]}
-          />
-        </section>
+          <div className="card__body" style={{ padding: "0 0 4px" }}>
+            <SummaryTable
+              rows={data.byLocation}
+              columns={[
+                { key: "locationName", label: "מקום" },
+                { key: "city", label: "עיר" },
+                { key: "count", label: "כניסות" },
+              ]}
+            />
+          </div>
+        </div>
 
-        <section className="panel">
-          <div className="panel__header">
-            <h2>ביקור אחרון לפי מיקום</h2>
+        <div className="card">
+          <div className="card__header">
+            <div className="card__title">ביקור אחרון לפי מיקום</div>
           </div>
-          <SummaryTable
-            rows={data.latestByLocation.map((row) => ({
-              ...row,
-              lastVisitAt: formatDateTime(row.lastVisitAt),
-              ago: formatRelativeTime(row.lastVisitAt),
-            }))}
-            columns={[
-              { key: "locationName", label: "מקום" },
-              { key: "city", label: "עיר" },
-              { key: "mashgiachName", label: "משגיח אחרון" },
-              { key: "lastVisitAt", label: "מתי" },
-              { key: "ago", label: "כמה זמן עבר" },
-            ]}
-          />
-        </section>
-      </section>
+          <div className="card__body" style={{ padding: "0 0 4px" }}>
+            <SummaryTable
+              rows={data.latestByLocation.map((row) => ({
+                ...row,
+                lastVisitAt: formatDateTime(row.lastVisitAt),
+                ago: formatRelativeTime(row.lastVisitAt),
+              }))}
+              columns={[
+                { key: "locationName", label: "מקום" },
+                { key: "city", label: "עיר" },
+                { key: "mashgiachName", label: "משגיח אחרון" },
+                { key: "ago", label: "לפני" },
+              ]}
+            />
+          </div>
+        </div>
+      </div>
 
-      <section className="splitGrid">
-        <section className="panel">
-          <div className="panel__header">
-            <h2>סיכום שבועי</h2>
+      <div className="splitGrid">
+        <div className="card">
+          <div className="card__header">
+            <div className="card__title">סיכום שבועי</div>
           </div>
-          <SummaryTable
-            rows={data.weeklySummary}
-            columns={[
-              { key: "locationName", label: "מקום" },
-              { key: "city", label: "עיר" },
-              { key: "count", label: "כניסות" },
-            ]}
-          />
-        </section>
+          <div className="card__body" style={{ padding: "0 0 4px" }}>
+            <SummaryTable
+              rows={data.weeklySummary}
+              columns={[
+                { key: "locationName", label: "מקום" },
+                { key: "city", label: "עיר" },
+                { key: "count", label: "כניסות" },
+              ]}
+            />
+          </div>
+        </div>
 
-        <section className="panel">
-          <div className="panel__header">
-            <h2>סיכום חודשי</h2>
+        <div className="card">
+          <div className="card__header">
+            <div className="card__title">סיכום חודשי</div>
           </div>
-          <SummaryTable
-            rows={data.monthlySummary}
-            columns={[
-              { key: "locationName", label: "מקום" },
-              { key: "city", label: "עיר" },
-              { key: "count", label: "כניסות" },
-            ]}
-          />
-        </section>
-      </section>
-    </div>
+          <div className="card__body" style={{ padding: "0 0 4px" }}>
+            <SummaryTable
+              rows={data.monthlySummary}
+              columns={[
+                { key: "locationName", label: "מקום" },
+                { key: "city", label: "עיר" },
+                { key: "count", label: "כניסות" },
+              ]}
+            />
+          </div>
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -666,7 +609,6 @@ function LogsTable({ rows }: { rows: MashgiachDashboardData["logs"] }) {
           {rows.length ? (
             rows.map((row) => {
               const tone = getStatusTone(row.status);
-
               return (
                 <tr key={row.id}>
                   <td>{formatDateTime(row.occurredAt)}</td>
@@ -683,7 +625,7 @@ function LogsTable({ rows }: { rows: MashgiachDashboardData["logs"] }) {
           ) : (
             <tr>
               <td colSpan={6} className="emptyRow">
-                לא נמצאו לוגים בטווח הסינון.
+                לא נמצאו לוגים.
               </td>
             </tr>
           )}
@@ -705,24 +647,24 @@ function SummaryTable({
       <table>
         <thead>
           <tr>
-            {columns.map((column) => (
-              <th key={column.key}>{column.label}</th>
+            {columns.map((col) => (
+              <th key={col.key}>{col.label}</th>
             ))}
           </tr>
         </thead>
         <tbody>
           {rows.length ? (
-            rows.map((row, rowIndex) => (
-              <tr key={`${rowIndex}-${String(row[columns[0].key])}`}>
-                {columns.map((column) => (
-                  <td key={column.key}>{row[column.key]}</td>
+            rows.map((row, i) => (
+              <tr key={`${i}-${String(row[columns[0].key])}`}>
+                {columns.map((col) => (
+                  <td key={col.key}>{row[col.key]}</td>
                 ))}
               </tr>
             ))
           ) : (
             <tr>
               <td colSpan={columns.length} className="emptyRow">
-                אין נתונים להצגה.
+                אין נתונים.
               </td>
             </tr>
           )}
@@ -732,35 +674,7 @@ function SummaryTable({
   );
 }
 
-function StatusChip({
-  icon,
-  label,
-  value,
-}: {
-  icon: ReactNode;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="statusChip">
-      <span>{icon}</span>
-      <div>
-        <small>{label}</small>
-        <strong>{value}</strong>
-      </div>
-    </div>
-  );
-}
-
-function StatCard({
-  icon,
-  label,
-  value,
-}: {
-  icon: ReactNode;
-  label: string;
-  value: string;
-}) {
+function StatCard({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
   return (
     <article className="statCard">
       <div className="statCard__icon">{icon}</div>
@@ -772,32 +686,33 @@ function StatCard({
 
 function InlineMessage({ text, tone }: { text: string; tone: "danger" | "success" }) {
   return (
-    <section className={`panel message message--${tone}`}>
-      {tone === "danger" ? <AlertCircle size={18} /> : <CheckCircle2 size={18} />}
+    <div className={`message message--${tone}`}>
+      {tone === "danger" ? <AlertCircle size={16} /> : <CheckCircle2 size={16} />}
       <span>{text}</span>
-    </section>
+    </div>
   );
 }
 
-function ScanResultModal({
-  feedback,
-  onClose,
-}: {
-  feedback: ScanResult;
-  onClose: () => void;
-}) {
+function ScanResultModal({ feedback, onClose }: { feedback: ScanResult; onClose: () => void }) {
   const tone = getStatusTone(feedback.status);
-
   return (
-    <div className="modalBackdrop" role="presentation">
-      <section className="modal" role="dialog" aria-modal="true" aria-labelledby="scan-result-title">
-        <div className={`resultIcon resultIcon--${tone}`}>
-          {tone === "success" ? <CheckCircle2 size={28} /> : <AlertCircle size={28} />}
+    <div className="modalBackdrop" role="presentation" onClick={onClose}>
+      <section
+        className="modal"
+        role="dialog"
+        aria-modal
+        aria-labelledby="scan-result-title"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="scanResult">
+          <div className={`scanResult__icon scanResult__icon--${tone}`}>
+            {tone === "success" ? <CheckCircle2 size={30} /> : <AlertCircle size={30} />}
+          </div>
+          <h2 id="scan-result-title">{translateStatus(feedback.status)}</h2>
+          <p>{feedback.message}</p>
         </div>
-        <h2 id="scan-result-title">{translateStatus(feedback.status)}</h2>
-        <p>{feedback.message}</p>
         <button className="button button--primary button--wide" onClick={onClose} type="button">
-          חזרה למסך הראשי
+          חזרה
         </button>
       </section>
     </div>
